@@ -21,7 +21,7 @@ export type SaleRow = {
 };
 export type PurchaseRow = {
   id: string; number: string; kind: string; date: string; supplier: string; total: number;
-  birds?: number; weightKg?: number; name?: string; quantity?: number; unit?: string;
+  birds?: number; weightKg?: number; name?: string; quantity?: number; unit?: string; status?: string;
 };
 export type ExpenseRow = {
   id: string; number: string; date: string; category: string; name: string; total: number;
@@ -34,13 +34,14 @@ export async function loadAll() {
     redis.cmd<string[]>("ZREVRANGE", k("expenses:index"), 0, MAX - 1),
   ]);
   const cancelKeys = saleKeys.map((key) => key.replace(k("sales") + ":", k("sales_cancel") + ":"));
-  const [sales, cancels, purchases, expenses] = await Promise.all([
+  const purCancelKeys = purKeys.map((key) => key.replace(k("purchases") + ":", k("purchases_cancel") + ":"));
+  const [sales, cancels, purchases, purCancels, expenses] = await Promise.all([
     mgetJson<SaleRow>(saleKeys), mgetJson<unknown>(cancelKeys),
-    mgetJson<PurchaseRow>(purKeys), mgetJson<ExpenseRow>(expKeys),
+    mgetJson<PurchaseRow>(purKeys), mgetJson<unknown>(purCancelKeys), mgetJson<ExpenseRow>(expKeys),
   ]);
   return {
     sales: sales.flatMap((s, i) => (s ? [cancels[i] ? { ...s, status: "dibatalkan" } : s] : [])),
-    purchases: purchases.filter((x): x is PurchaseRow => !!x),
+    purchases: purchases.flatMap((x, i) => (x ? [purCancels[i] ? { ...x, status: "dibatalkan" } : x] : [])),
     expenses: expenses.filter((x): x is ExpenseRow => !!x),
   };
 }
@@ -52,7 +53,7 @@ export async function getReport(from: string, to: string) {
   return {
     report,
     salesRows: data.sales.filter((s) => inRange(dateKey(s.createdAt, TZ))),
-    purchaseRows: data.purchases.filter((p) => inRange(p.date)),
+    purchaseRows: data.purchases.filter((p) => inRange(p.date) && p.status !== "dibatalkan"),
     expenseRows: data.expenses.filter((e) => inRange(e.date)),
   };
 }

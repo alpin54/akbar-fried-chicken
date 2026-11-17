@@ -6,6 +6,7 @@ import { DataTable, type Column } from "@/components/ui/data-table";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Notice } from "@/components/ui/notice";
+import { useIdemKey } from "@/components/shared/use-idem-key";
 import { apiGet, apiSend, fmtDateTime } from "@/lib/client";
 import { formatRupiah } from "@/lib/money";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -97,6 +98,7 @@ export default function SaleHistory() {
 }
 
 function SaleDetail({ sale, onClose, onCancelled }: { sale: SaleRecord; onClose: () => void; onCancelled: () => void }) {
+  const key = useIdemKey();
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -106,7 +108,7 @@ function SaleDetail({ sale, onClose, onCancelled }: { sale: SaleRecord; onClose:
     if (reason.trim().length < 3) { setError("Isi alasan pembatalan."); return; }
     setBusy(true);
     try {
-      await apiSend(`/api/sales/${sale.id}/cancel`, { reason });
+      await apiSend(`/api/sales/${sale.id}/cancel`, { reason }, { idemKey: key.get() });
       onCancelled();
     } catch (e) { setError((e as Error).message); setBusy(false); }
   };
@@ -141,7 +143,7 @@ function SaleDetail({ sale, onClose, onCancelled }: { sale: SaleRecord; onClose:
       {asking && (
         <div className="mt-4 space-y-3">
           <p className="text-sm text-gray-600">Stok akan dikembalikan. Riwayat transaksi tetap tersimpan.</p>
-          <Input placeholder="Alasan pembatalan" value={reason} onChange={(e) => { setReason(e.target.value); setError(null); }} />
+          <Input placeholder="Alasan pembatalan" value={reason} onChange={(e) => { key.reset(); setReason(e.target.value); setError(null); }} />
           {error && <Notice kind="error">{error}</Notice>}
           <div className="flex gap-3">
             <Button variant="destructive" disabled={busy} onClick={cancel}>{busy ? "Memproses..." : "Ya, Batalkan Transaksi"}</Button>

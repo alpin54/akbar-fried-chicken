@@ -24,8 +24,8 @@ export async function createExpense(user: User, input: ExpenseInput, idemKey: st
   };
   // Memakai skrip atomik yang sama (tanpa barang stok) untuk nomor unik + idempotensi.
   return applyStock({
-    idemKey, seqName: "expense", recordPrefixName: "expenses", numberPrefix: "PG",
-    record, type: "pembelian", note: "", deltas: {},
+    idemKey, seqName: "expense", recordName: "expenses", numberPrefix: "PG", record,
+    type: "pembelian", note: "Pengeluaran", deltas: {}, actorId: user.id, payload: input,
   });
 }
 

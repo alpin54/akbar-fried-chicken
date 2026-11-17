@@ -10,8 +10,8 @@ export type MenuProduct = {
   usesChicken: boolean;
   usesSambal: boolean;
   categoryId: string; // relasi ke kategori memakai ID, bukan nama
-  /** Bila ada: produk dijual satuan dan mengurangi inventori dengan ID ini (ID inventori = ID produk). */
-  stockItemId?: string;
+  /** Dengan Stok: punya inventori (ID inventori = ID produk) dan dikurangi saat dijual satuan. */
+  trackStock: boolean;
   code?: string;
   unit?: string;
   buyPrice?: number;
@@ -26,6 +26,7 @@ export type SaleLine = {
   unitPrice: number; // snapshot
   quantity: number;
   variant: ChickenPart | null;
+  trackStock: boolean; // snapshot pengaturan stok saat transaksi
   subtotal: number;
   consumption: Record<string, number>; // inventoryId -> jumlah
 };
@@ -49,6 +50,8 @@ export function computeSale(
 ): SaleResult {
   if (!items.length) return { ok: false, error: "Keranjang masih kosong" };
   const byId = new Map(catalog.map((p) => [p.id, p]));
+  // Produk bahan (potongan/sambal) yang diatur Tanpa Stok tidak boleh dimutasi.
+  const isTracked = (id: string) => (byId.get(id)?.trackStock ?? true);
   const lines: SaleLine[] = [];
   const total: Record<string, number> = {};
   let sum = 0;
@@ -58,20 +61,23 @@ export function computeSale(
     if (!p || !p.active) return { ok: false, error: "Produk tidak ditemukan atau nonaktif" };
     if (!isInt(it.quantity) || it.quantity < 1) return { ok: false, error: `Jumlah ${p.name} tidak valid` };
 
+    if (p.trackStock && (p.usesChicken || p.usesSambal))
+      return { ok: false, error: `Pengaturan stok ${p.name} tidak valid` };
     let variant: ChickenPart | null = null;
     const consumption: Record<string, number> = {};
     if (p.usesChicken) {
       if (!it.variant || !CHICKEN_PARTS.includes(it.variant))
         return { ok: false, error: `Pilih bagian ayam untuk ${p.name}` };
       variant = it.variant;
-      consumption[chickenInventoryId(variant)] = it.quantity; // hanya varian terpilih
+      // Hanya varian terpilih; bila produk potongan itu diatur Tanpa Stok, tidak ada mutasi stok.
+      if (isTracked(chickenInventoryId(variant))) consumption[chickenInventoryId(variant)] = it.quantity;
     } else if (it.variant) {
       return { ok: false, error: `${p.name} tidak memakai pilihan bagian ayam` };
     }
-    if (p.stockItemId) consumption[p.stockItemId] = (consumption[p.stockItemId] ?? 0) + it.quantity; // penjualan satuan
+    if (p.trackStock) consumption[p.id] = (consumption[p.id] ?? 0) + it.quantity; // penjualan satuan
     if (p.usesSambal) {
       const s = it.quantity * recipe.sambalPerPortion;
-      if (s > 0) consumption[SAMBAL_ID] = s;
+      if (s > 0 && isTracked(SAMBAL_ID)) consumption[SAMBAL_ID] = s;
     }
     if (NO_STOCK_IDS.some((id) => id in consumption)) return { ok: false, error: "Nasi tidak memiliki stok" };
     for (const [id, q] of Object.entries(consumption)) total[id] = (total[id] ?? 0) + q;
@@ -79,7 +85,7 @@ export function computeSale(
     const subtotal = p.price * it.quantity; // harga dari katalog server, bukan client
     sum += subtotal;
     lines.push({ productId: p.id, productName: p.name, unitPrice: p.price,
-      quantity: it.quantity, variant, subtotal, consumption });
+      quantity: it.quantity, variant, trackStock: p.trackStock, subtotal, consumption });
   }
 
   if (!isInt(received) || received < sum)

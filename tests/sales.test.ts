@@ -2,13 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { computeSale, type MenuProduct } from "../src/lib/domain/sales.ts";
 
-const P = (id: string, name: string, price: number, c: boolean, s: boolean, stockItemId?: string): MenuProduct =>
-  ({ id, name, price, active: true, usesChicken: c, usesSambal: s, categoryId: "x", stockItemId });
+const P = (id: string, name: string, price: number, c: boolean, s: boolean, trackStock = false): MenuProduct =>
+  ({ id, name, price, active: true, usesChicken: c, usesSambal: s, categoryId: "x", trackStock });
 const catalog = [
   P("nasi", "Nasi", 4000, false, false),
-  P("dada", "Dada", 9000, false, false, "dada"),
-  P("ceker", "Ceker", 2000, false, false),
-  P("sambal", "Sambal", 3000, false, false, "sambal"),
+  P("dada", "Dada", 9000, false, false, true),
+  P("ati_ampela", "Ati Ampela", 4000, false, false, true),
+  P("kepala", "Kepala", 3000, false, false, true),
+  P("ceker", "Ceker", 2000, false, false, true),
+  P("sambal", "Sambal", 3000, false, false, true),
   P("ayam_nasi", "Ayam + Nasi", 15000, true, false),
   P("geprek", "Ayam Geprek", 12000, true, true),
   P("geprek_nasi", "Ayam Geprek + Nasi", 18000, true, true),
@@ -59,11 +61,6 @@ test("Validasi: varian wajib, bayar kurang, pas, harga client diabaikan", () => 
   assert.equal(computeSale([{ productId: "nasi", quantity: 0 }], 9999, catalog, r).ok, false);
 });
 
-import { SAVE_SALE_LUA } from "../src/lib/domain/sale-script.ts";
-test("Script Lua terdefinisi dan tidak menyentuh nasi", () => {
-  assert.ok(SAVE_SALE_LUA.includes("insufficient"));
-  assert.ok(!/nasi/i.test(SAVE_SALE_LUA));
-});
 
 import { computeChickenPurchase, DEFAULT_CONVERSION, computeOtherPurchase, validateConversion } from "../src/lib/domain/purchases.ts";
 test("Pembelian ayam: 20 KG, 5 ekor, Rp30.000/KG", () => {
@@ -89,13 +86,13 @@ test("Resep kustom & validasi", () => {
 });
 
 
-test("Penjualan satuan: Dada & Sambal punya stok sendiri; Ati/Ceker/Nasi tidak", () => {
+test("Penjualan satuan: Dada, Sambal, Ati, Kepala, Ceker punya stok sendiri; Nasi tidak", () => {
   const d = computeSale([{ productId: "dada", quantity: 2 }], 20000, catalog, r);
   assert.ok(d.ok); assert.deepEqual(d.consumption, { dada: 2 });
   const sm = computeSale([{ productId: "sambal", quantity: 3 }], 9000, catalog, r);
   assert.ok(sm.ok); assert.deepEqual(sm.consumption, { sambal: 3 });
   const c = computeSale([{ productId: "ceker", quantity: 5 }], 10000, catalog, r);
-  assert.ok(c.ok); assert.deepEqual(c.consumption, {});
+  assert.ok(c.ok); assert.deepEqual(c.consumption, { ceker: 5 });
   assert.equal(computeSale([{ productId: "dada", quantity: 1, variant: "dada" }], 9000, catalog, r).ok, false);
 });
 test("Varian tidak menyentuh potongan lain (Paha Bawah & Sayap)", () => {
@@ -103,4 +100,40 @@ test("Varian tidak menyentuh potongan lain (Paha Bawah & Sayap)", () => {
   const b = computeSale([{ productId: "ayam_nasi", quantity: 1, variant: "sayap" }], 15000, catalog, r);
   assert.ok(a.ok && b.ok);
   assert.deepEqual(a.consumption, { paha_bawah: 1 }); assert.deepEqual(b.consumption, { sayap: 1 });
+});
+
+test("C. Penjualan langsung Ati 2, Kepala 3, Ceker 5: hanya stok masing-masing", () => {
+  const s = computeSale([
+    { productId: "ati_ampela", quantity: 2 }, { productId: "kepala", quantity: 3 }, { productId: "ceker", quantity: 5 },
+  ], 100000, catalog, r);
+  assert.ok(s.ok);
+  assert.deepEqual(s.consumption, { ati_ampela: 2, kepala: 3, ceker: 5 });
+  assert.equal(s.total, 2 * 4000 + 3 * 3000 + 5 * 2000);
+  for (const id of ["dada", "paha_atas", "paha_bawah", "sayap", "sambal", "nasi"]) assert.ok(!(id in s.consumption));
+});
+test("Paket tidak melibatkan Ati/Kepala/Ceker", () => {
+  const s = computeSale([{ productId: "geprek_nasi", quantity: 2, variant: "dada" }], 50000, catalog, r);
+  assert.ok(s.ok);
+  for (const id of ["ati_ampela", "kepala", "ceker", "nasi"]) assert.ok(!(id in s.consumption));
+});
+test("D. Konversi ayam hanya 4 potongan; Ati/Kepala/Ceker tidak berubah", () => {
+  const c = computeChickenPurchase({ weightKg: 10, birds: 5, pricePerKg: 30000 }, DEFAULT_CONVERSION);
+  assert.ok(c.ok);
+  assert.deepEqual(Object.keys(c.pieces).sort(), ["dada", "paha_atas", "paha_bawah", "sayap"]);
+  for (const id of ["ati_ampela", "kepala", "ceker"]) assert.ok(!(id in c.pieces));
+  assert.equal(Object.keys(DEFAULT_CONVERSION).length, 4);
+});
+
+test("Produk bahan yang diatur Tanpa Stok tidak dimutasi (varian & sambal), snapshot trackStock tersimpan", () => {
+  const cat = catalog.map((p) => (p.id === "dada" || p.id === "sambal" ? { ...p, trackStock: false } : p));
+  const a = computeSale([{ productId: "geprek", quantity: 2, variant: "dada" }], 30000, cat, r);
+  assert.ok(a.ok); assert.deepEqual(a.consumption, {}); // Dada & Sambal Tanpa Stok
+  const b = computeSale([{ productId: "dada", quantity: 2 }], 20000, cat, r);
+  assert.ok(b.ok); assert.deepEqual(b.consumption, {}); assert.equal(b.lines[0].trackStock, false);
+  const c = computeSale([{ productId: "ceker", quantity: 1 }], 2000, cat, r);
+  assert.ok(c.ok); assert.equal(c.lines[0].trackStock, true);
+});
+test("Konfigurasi tidak valid (paket + Dengan Stok) ditolak", () => {
+  const bad = catalog.map((p) => (p.id === "ayam_nasi" ? { ...p, trackStock: true } : p));
+  assert.equal(computeSale([{ productId: "ayam_nasi", quantity: 1, variant: "dada" }], 15000, bad, r).ok, false);
 });

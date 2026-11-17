@@ -5,10 +5,12 @@ Next.js (App Router) + TypeScript + Tailwind (fondasi TailAdmin) + Upstash Redis
 
 ## Menjalankan di komputer
 
+Butuh Node.js 22.18 atau lebih baru (tes TypeScript berjalan langsung di Node tanpa flag tambahan).
+
 1. `npm install`
 2. Salin `.env.example` menjadi `.env.local`, lalu isi nilainya (lihat tabel di bawah).
 3. `npm run dev`, buka http://localhost:3000, masuk dengan `ADMIN_USERNAME` dan `ADMIN_INITIAL_PASSWORD`.
-4. Sebelum dipakai: `npm run lint`, `npx tsc --noEmit`, `npm run build`, dan `node --experimental-strip-types --test tests/*.test.ts`.
+4. Sebelum dipakai: `npm run lint`, `npx tsc --noEmit`, `npm run build`, dan `npm test`.
 
 ## Environment variable
 
@@ -47,12 +49,38 @@ Kepala Rp3.000, Ceker Rp2.000).
 
 ## Aturan stok
 
-- ID inventori = ID produk. Hanya `dada`, `paha_atas`, `paha_bawah`, `sayap` (hasil konversi ayam) dan `sambal` yang punya stok.
-- Ayam + Nasi / Ayam Geprek / Ayam Geprek + Nasi: kasir wajib memilih bagian ayam; hanya bagian itu yang berkurang. Geprek juga mengurangi sambal sesuai resep.
-- Produk satuan (Dada, Paha Atas, Paha Bawah, Sayap, Sambal) mengurangi stoknya sendiri; Ati Ampela, Kepala, Ceker tidak punya stok.
-- Nasi tidak pernah punya stok, inventori, maupun riwayat stok.
-- Pembelian ayam: potongan dihitung dari jumlah EKOR x aturan per ekor (Pengaturan, Aturan Potongan Ayam; hanya admin). KG hanya untuk biaya.
-  Aturan yang dipakai disimpan sebagai snapshot di tiap pembelian.
+- Setiap produk punya pilihan **Manajemen Stok: Dengan Stok / Tanpa Stok** (`trackStock`, divalidasi di server).
+  Dengan Stok: punya inventori (ID inventori = ID produk), muncul di Stok Barang, punya minimum, status, dan riwayat, serta
+  penjualannya memeriksa stok. Tanpa Stok: tidak ada inventori baru, tidak muncul di Stok Barang, penjualan tidak mengubah stok.
+- Default: Dada, Paha Atas, Paha Bawah, Sayap, Ati Ampela, Kepala, Ceker, Sambal = Dengan Stok. Nasi dan paket = Tanpa Stok.
+  Nasi tidak pernah punya stok (ditolak di server). Paket tidak bisa Dengan Stok; bahan bakunya dikurangi lewat komposisi.
+- Mengubah Dengan Stok menjadi Tanpa Stok butuh konfirmasi bila ada saldo/riwayat; saldo dan riwayat tetap tersimpan.
+  Mengubah Tanpa Stok menjadi Dengan Stok membuat inventori awal 0 bila belum ada. Transaksi lama tidak berubah (snapshot).
+- Paket ayam (Ayam + Nasi / Ayam Geprek / Ayam Geprek + Nasi): kasir wajib memilih bagian; hanya bagian itu yang berkurang. Geprek juga mengurangi sambal.
+- Penjualan satuan produk Dengan Stok (Dada, ..., Ati Ampela, Kepala, Ceker, Sambal) mengurangi stoknya sendiri.
+- Pembelian ayam utuh hanya menambah Dada, Paha Atas, Paha Bawah, Sayap (jumlah EKOR x aturan per ekor; KG hanya biaya).
+  Aturan potongan per ekor bisa diubah langsung di form Beli Ayam (khusus pembelian itu, dengan preview langsung); aturan default global
+  (Pengaturan, Aturan Potongan Ayam) hanya menjadi nilai awal form dan tidak berubah. Aturan yang dipakai disimpan sebagai snapshot
+  (`chickenCount`, `cuttingRule`, `convertedStock`, `totalPieces`, `ruleSource`) dan dipakai untuk reversal.
+  Ati Ampela, Kepala, Ceker masuk lewat Pembelian, Beli Barang Lain (pilih produknya) atau Sesuaikan stok.
+
+## Atomicity, idempotency, concurrency
+
+- Semua mutasi stok memakai script Lua atomik (`src/lib/domain/stock-script.ts`): seluruh validasi sebelum penulisan pertama,
+  jadi all-or-nothing, tanpa stok negatif, dan dua kasir yang berebut stok tidak bisa sama-sama berhasil.
+- Idempotency: setiap permintaan mutasi membawa `Idempotency-Key` (UUID dari client). Server menyimpan `hash(payload)|transaksi`.
+  Key sama + payload sama mengembalikan transaksi lama; key sama + payload beda ditolak (409). Catatan idempotency tidak kedaluwarsa.
+  Status PROCESSING tidak pernah terlihat karena script tidak bisa disela; kegagalan (mis. stok kurang) tidak menyimpan apa pun sehingga aman dicoba lagi.
+- Pembatalan penjualan/pembelian: reversal atomik, hanya sekali, movement asal tidak diubah, movement reversal mengacu ke movement asal.
+  Pembatalan pembelian ditolak bila stoknya sudah terpakai.
+- Catatan: Redis tidak me-rollback script yang error di tengah. Script dirancang tanpa validasi setelah penulisan dimulai.
+- Perubahan non-transaksi (edit/hapus pengeluaran, produk, pengaturan) bersifat PUT/DELETE yang aman diulang, tanpa idempotency key.
+
+## Pengujian
+
+`npm test` menjalankan semua tes di `tests/`: aturan bisnis, seeder (Redis tiruan), dan script Lua ASLI di Redis tiruan.
+Tes script Lua memakai `python3` + `liblua5.4` (`tests/lua/harness.py`); bila tidak ada, tes itu dilewati.
+Tes ini TIDAK menggantikan uji pada Upstash sungguhan (Lua 5.1 di Redis vs 5.4 di harness).
 
 ## Aturan penting
 

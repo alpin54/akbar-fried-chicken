@@ -1,4 +1,7 @@
 // Helper fetch untuk komponen client. Pesan error selalu dalam Bahasa Indonesia.
+export class ApiError extends Error {
+  constructor(message: string, public status: number, public code?: string) { super(message); }
+}
 export async function apiGet<T>(url: string): Promise<T> {
   const res = await fetch(url, { cache: "no-store" });
   const body = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
@@ -25,7 +28,10 @@ export async function apiSend<T>(
     throw new Error("Tidak dapat terhubung ke server. Coba lagi, data tidak akan tercatat dua kali.");
   }
   const body = (await res.json().catch(() => null)) as (T & { error?: string }) | null;
-  if (!res.ok || !body) throw new Error(body?.error ?? (res.status >= 500 ? "Server bermasalah. Periksa koneksi database lalu coba lagi." : "Gagal menyimpan data"));
+  if (!res.ok || !body) {
+    const msg = body?.error ?? (res.status >= 500 ? "Server bermasalah. Periksa koneksi database lalu coba lagi." : "Gagal menyimpan data");
+    throw new ApiError(msg, res.status, (body as { code?: string } | null)?.code);
+  }
   return body;
 }
 

@@ -3,7 +3,7 @@ export type SaleLite = {
   createdAt: number; status: string; total: number;
   items: { productName: string; quantity: number; subtotal: number; variant: string | null }[];
 };
-export type PurchaseLite = { date: string; kind: string; supplier: string; total: number };
+export type PurchaseLite = { date: string; kind: string; supplier: string; total: number; status?: string };
 export type ExpenseLite = { date: string; category: string; total: number };
 
 export type DayRow = { date: string; sales: number; transactions: number; purchases: number; expenses: number };
@@ -63,6 +63,7 @@ export function buildReport(i: {
     }
   }
   for (const p of i.purchases) {
+    if (p.status === "dibatalkan") continue; // pembelian yang dibatalkan tidak dihitung
     const row = daily.get(p.date);
     if (!row) continue;
     row.purchases += p.total; s.purchasesTotal += p.total;

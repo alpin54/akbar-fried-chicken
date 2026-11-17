@@ -40,11 +40,15 @@ test("A. Redis kosong: 3 kategori, 12 produk, index terbentuk", async () => {
   assert.equal(byName["Paha Bawah"].categoryId, "fried_chicken");
   assert.ok(products(r).every((p) => Number.isInteger(p.price) && p.categoryId));
 });
-test("Inventori hanya 4 potongan + sambal; Nasi & paket tidak punya stok", async () => {
+test("A. Inventori: 7 produk Fried Chicken + sambal stok awal 0; Nasi & paket tidak punya", async () => {
   const r = fakeRedis(); await seedMasterData(r.cmd, k);
-  assert.deepEqual([...r.sets.get(k("inventory:index"))!].sort(), ["dada", "paha_atas", "paha_bawah", "sambal", "sayap"]);
-  for (const id of ["nasi", "ayam_nasi", "ati_ampela", "kepala", "ceker"]) assert.equal(r.kv.has(k("inventory", id)), false);
-  assert.equal(r.kv.get(k("inventory", "dada")), "0");
+  assert.deepEqual([...r.sets.get(k("inventory:index"))!].sort(), ["ati_ampela", "ceker", "dada", "kepala", "paha_atas", "paha_bawah", "sambal", "sayap"]);
+  for (const id of ["nasi", "ayam_nasi", "ayam_geprek", "geprek_nasi"]) assert.equal(r.kv.has(k("inventory", id)), false);
+  for (const id of ["dada", "paha_atas", "paha_bawah", "sayap", "ati_ampela", "kepala", "ceker"]) {
+    assert.equal(r.kv.get(k("inventory", id)), "0");
+    assert.equal(JSON.parse(r.kv.get(k("products", id))!).trackStock, true); // inventori memakai product ID
+  }
+  assert.equal(JSON.parse(r.kv.get(k("inventory_meta", "ceker"))!).unit, "pcs");
   assert.deepEqual(JSON.parse(r.kv.get(k("settings", "conversion_recipe"))!), { dada: 4, paha_atas: 2, paha_bawah: 2, sayap: 2 });
 });
 test("Seeder idempotent & tidak menimpa harga/stok yang sudah diedit", async () => {
@@ -54,7 +58,7 @@ test("Seeder idempotent & tidak menimpa harga/stok yang sudah diedit", async () 
   r.kv.set(k("products", "dada"), JSON.stringify({ ...dada, price: 12345, active: false }));
   r.kv.set(k("inventory", "dada"), "20");
   const rep = await seedMasterData(r.cmd, k);
-  assert.deepEqual(rep, { categories: 0, units: 0, products: 0, inventory: 0 });
+  assert.deepEqual(rep, { categories: 0, units: 0, products: 0, inventory: 0, migrated: 0 });
   assert.equal(r.kv.size, before);
   assert.equal(products(r).length, 12);
   const after = JSON.parse(r.kv.get(k("products", "dada"))!);
@@ -79,4 +83,51 @@ import { DEFAULT_CONVERSION as PURCHASE_CONV } from "../src/lib/domain/purchases
 test("Default konversi konsisten: 4/2/2/2 = 10 potong", () => {
   assert.deepEqual(SEED_CONV, PURCHASE_CONV);
   assert.equal(Object.values(SEED_CONV).reduce((a, b) => a + b, 0), 10);
+});
+
+test("Paket & Nasi: Tanpa Stok, tidak punya inventori; semua produk stok ber-trackStock", async () => {
+  const r = fakeRedis(); await seedMasterData(r.cmd, k);
+  const byId = Object.fromEntries(products(r).map((p) => [p.id, p]));
+  for (const id of ["ayam_nasi", "ayam_geprek", "geprek_nasi", "nasi"]) assert.equal(byId[id].trackStock, false);
+  for (const id of ["dada", "paha_atas", "paha_bawah", "sayap", "ati_ampela", "kepala", "ceker", "sambal"]) assert.equal(byId[id].trackStock, true);
+  assert.equal(byId.ati_ampela.unit, "pcs");
+});
+test("Konversi default hanya 4 potongan (Ati/Kepala/Ceker tidak ikut)", async () => {
+  const r = fakeRedis(); await seedMasterData(r.cmd, k);
+  const conv = JSON.parse(r.kv.get(k("settings", "conversion_recipe"))!);
+  assert.deepEqual(Object.keys(conv).sort(), ["dada", "paha_atas", "paha_bawah", "sayap"]);
+});
+test("Migrasi data v2 (tanpa trackStock): Ati/Kepala/Ceker dapat stok, harga & saldo berjalan tidak tersentuh", async () => {
+  const r = fakeRedis(); await seedMasterData(r.cmd, k);
+  // simulasi database v2: tanpa trackStock; potongan ayam & sambal memakai stockItemId; Ati/Kepala/Ceker belum punya stok
+  for (const p of products(r)) {
+    const { trackStock: _t, ...legacy } = p as Record<string, unknown>;
+    if (["dada", "paha_atas", "paha_bawah", "sayap", "sambal"].includes(String(p.id))) (legacy as Record<string, unknown>).stockItemId = p.id;
+    if (["ati_ampela", "kepala", "ceker"].includes(String(p.id))) legacy.price = 7777; // diedit admin
+    r.kv.set(k("products", String(p.id)), JSON.stringify(legacy));
+  }
+  for (const id of ["ati_ampela", "kepala", "ceker"]) {
+    r.kv.delete(k("inventory", id)); r.kv.delete(k("inventory_meta", id)); r.sets.get(k("inventory:index"))!.delete(id);
+  }
+  r.kv.set(k("inventory", "dada"), "42");
+  const rep = await seedMasterData(r.cmd, k);
+  assert.equal(rep.migrated, 12); assert.equal(rep.inventory, 3); assert.equal(rep.products, 0);
+  const byId = Object.fromEntries(products(r).map((p) => [p.id, p]));
+  for (const id of ["ati_ampela", "kepala", "ceker"]) {
+    assert.equal(byId[id].trackStock, true); assert.equal(byId[id].price, 7777);
+    assert.equal(r.kv.get(k("inventory", id)), "0");
+  }
+  assert.equal(byId.nasi.trackStock, false); assert.equal(byId.ayam_nasi.trackStock, false);
+  assert.equal(byId.dada.stockItemId, undefined);
+  assert.equal(r.kv.get(k("inventory", "dada")), "42");
+  assert.equal((await seedMasterData(r.cmd, k)).migrated, 0);
+});
+test("Admin menonaktifkan stok produk: seeder tidak membuat ulang inventori & tidak mengubah pilihan admin", async () => {
+  const r = fakeRedis(); await seedMasterData(r.cmd, k);
+  const p = JSON.parse(r.kv.get(k("products", "kepala"))!); p.trackStock = false;
+  r.kv.set(k("products", "kepala"), JSON.stringify(p));
+  r.kv.delete(k("inventory", "kepala")); r.kv.delete(k("inventory_meta", "kepala")); r.sets.get(k("inventory:index"))!.delete("kepala");
+  await seedMasterData(r.cmd, k);
+  assert.equal(r.kv.has(k("inventory", "kepala")), false);
+  assert.equal(JSON.parse(r.kv.get(k("products", "kepala"))!).trackStock, false);
 });

@@ -12,6 +12,7 @@ import { formatRupiah } from "@/lib/money";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PurchaseRecord } from "./types";
 
+type StockProduct = { id: string; name: string; unit?: string };
 const SESSION_KEY = "fc_other_purchase_session_start";
 
 export default function OtherPurchaseForm() {
@@ -20,6 +21,8 @@ export default function OtherPurchaseForm() {
   const nameRef = useRef<HTMLInputElement>(null);
   const [date, setDate] = useState(todayISO());
   const [supplier, setSupplier] = useState("");
+  const [productId, setProductId] = useState("");
+  const [stockProducts, setStockProducts] = useState<StockProduct[]>([]);
   const [name, setName] = useState("");
   const [quantity, setQuantity] = useState("");
   const [unit, setUnit] = useState("");
@@ -44,6 +47,18 @@ export default function OtherPurchaseForm() {
   }, []);
 
   useEffect(() => { loadSession().catch(() => {}); }, [loadSession]);
+  useEffect(() => {
+    apiGet<{ products: (StockProduct & { trackStock: boolean })[] }>("/api/products")
+      .then((d) => setStockProducts(d.products.filter((p) => p.trackStock)))
+      .catch(() => {});
+  }, []);
+
+  const pickProduct = (id: string) => {
+    key.reset(); setError(null); setSuccess(null); setProductId(id);
+    const p = stockProducts.find((x) => x.id === id);
+    if (p) { setName(p.name); setUnit(p.unit ?? ""); setTracked(true); }
+    else { setName(""); setUnit(""); }
+  };
 
   const qty = Number(quantity);
   const total = Number.isInteger(qty) && qty > 0 && unitPrice != null ? qty * unitPrice : 0;
@@ -57,12 +72,13 @@ export default function OtherPurchaseForm() {
     setBusy(true); setError(null);
     try {
       await apiSend("/api/purchases/other", {
-        date, supplier: supplier || undefined, name, unit, quantity: qty, unitPrice, tracked, note: note || undefined,
+        date, supplier: supplier || undefined, name, unit, quantity: qty, unitPrice, tracked: productId ? true : tracked,
+        ...(productId ? { productId } : {}), note: note || undefined,
       }, { idemKey: key.get() });
       key.reset();
       setSuccess(`${name.trim()} berhasil disimpan. Silakan isi barang berikutnya.`);
       // Kosongkan form, tetap di halaman. Tanggal dan supplier dipertahankan agar cepat.
-      setName(""); setQuantity(""); setUnit(""); setUnitPrice(null); setNote("");
+      setProductId(""); setName(""); setQuantity(""); setUnit(""); setUnitPrice(null); setNote("");
       await loadSession().catch(() => {});
       nameRef.current?.focus();
     } catch (err) {
@@ -85,18 +101,27 @@ export default function OtherPurchaseForm() {
           <Labeled label="Tanggal"><Input type="date" value={date} onChange={(e) => touch(setDate)(e.target.value)} /></Labeled>
           <Labeled label="Supplier (boleh dikosongkan)"><Input value={supplier} onChange={(e) => touch(setSupplier)(e.target.value)} /></Labeled>
           <div className="sm:col-span-2">
+            <Labeled label="Barang">
+              <select className="h-11 w-full rounded-[10px] border border-gray-300 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-900"
+                value={productId} onChange={(e) => pickProduct(e.target.value)}>
+                <option value="">Barang lain (ketik nama sendiri)</option>
+                {stockProducts.map((p) => <option key={p.id} value={p.id}>{p.name} (produk dengan stok)</option>)}
+              </select>
+            </Labeled>
+          </div>
+          <div className="sm:col-span-2">
             <Labeled label="Nama barang">
-              <Input ref={nameRef} placeholder="Contoh: Minyak goreng" value={name} onChange={(e) => touch(setName)(e.target.value)} />
+              <Input ref={nameRef} disabled={!!productId} placeholder="Contoh: Minyak goreng" value={name} onChange={(e) => touch(setName)(e.target.value)} />
             </Labeled>
           </div>
           <Labeled label="Jumlah"><Input inputMode="numeric" value={quantity} onChange={(e) => touch(setQuantity)(e.target.value.replace(/\D/g, ""))} /></Labeled>
-          <Labeled label="Satuan"><Input placeholder="Contoh: liter, kg, pcs" value={unit} onChange={(e) => touch(setUnit)(e.target.value)} /></Labeled>
+          <Labeled label="Satuan"><Input disabled={!!productId} placeholder="Contoh: liter, kg, pcs" value={unit} onChange={(e) => touch(setUnit)(e.target.value)} /></Labeled>
           <Labeled label="Harga per satuan"><CurrencyInput placeholder="Rp0" value={unitPrice} onValueChange={touch(setUnitPrice)} /></Labeled>
           <Labeled label="Catatan (boleh dikosongkan)"><Input value={note} onChange={(e) => touch(setNote)(e.target.value)} /></Labeled>
         </div>
 
         <label className="flex items-start gap-3 text-sm text-gray-700 dark:text-gray-300">
-          <input type="checkbox" className="mt-1 size-4" checked={tracked} onChange={(e) => touch(setTracked)(e.target.checked)} />
+          <input type="checkbox" className="mt-1 size-4" disabled={!!productId} checked={productId ? true : tracked} onChange={(e) => touch(setTracked)(e.target.checked)} />
           <span>
             <span className="font-medium">Tambahkan ke Stok Barang</span>
             <span className="block text-gray-500">Matikan untuk barang habis pakai yang tidak dihitung stoknya (hanya dicatat sebagai pembelian).</span>

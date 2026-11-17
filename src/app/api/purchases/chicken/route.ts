@@ -9,6 +9,11 @@ const body = z.object({
   birds: z.number().int().min(1).max(100000),
   pricePerKg: z.number().int().min(1).max(100_000_000),
   note: z.string().max(300).optional(),
+  // Aturan potongan per ekor khusus pembelian ini (bilangan bulat 0-100; validasi total > 0 di server)
+  cuttingRule: z.object({
+    dada: z.number().int().min(0).max(100), paha_atas: z.number().int().min(0).max(100),
+    paha_bawah: z.number().int().min(0).max(100), sayap: z.number().int().min(0).max(100),
+  }).optional(),
 });
 
 export async function POST(req: Request) {

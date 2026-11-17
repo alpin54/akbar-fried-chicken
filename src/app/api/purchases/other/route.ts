@@ -10,6 +10,7 @@ const body = z.object({
   quantity: z.number().int().min(1).max(1_000_000),
   unitPrice: z.number().int().min(0).max(100_000_000),
   tracked: z.boolean(),
+  productId: z.string().regex(/^[a-z0-9_]+$/).max(60).optional(),
   note: z.string().max(300).optional(),
 });
 

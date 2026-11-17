@@ -40,3 +40,12 @@ test("Pengelompokan mingguan & bulanan", () => {
   const w = groupDaily(r.daily, "week");
   assert.equal(w[0].date, "2026-10-26"); // 1 Nov 2026 hari Minggu -> minggu mulai Senin 26 Okt
 });
+
+test("Pembelian yang dibatalkan tidak dihitung di laporan", () => {
+  const r = buildReport({
+    from: "2026-11-15", to: "2026-11-15", sales: [], expenses: [],
+    purchases: [{ date: "2026-11-15", kind: "ayam", supplier: "A", total: 600000 },
+                { date: "2026-11-15", kind: "ayam", supplier: "A", total: 999999, status: "dibatalkan" }],
+  });
+  assert.equal(r.summary.purchasesTotal, 600000);
+});

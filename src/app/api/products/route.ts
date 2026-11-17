@@ -21,8 +21,10 @@ const body = z.object({
   buyPrice: z.number().int().min(0).max(100_000_000).optional(),
   price: z.number().int().min(0).max(100_000_000),
   active: z.boolean(),
+  trackStock: z.boolean(),
   usesChicken: z.boolean(),
   usesSambal: z.boolean(),
+  confirmDisableStock: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -30,6 +32,7 @@ export async function POST(req: Request) {
   if (user instanceof Response) return user;
   const parsed = body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return json({ error: "Data produk tidak valid" }, 400);
-  const out = await createProduct(parsed.data);
-  return typeof out === "string" ? json({ error: out }, 400) : json({ product: out }, 201);
+  const { confirmDisableStock: _c, ...input } = parsed.data;
+  const out = await createProduct(input);
+  return out.ok ? json({ product: out.product }, 201) : json({ error: out.error }, out.status);
 }

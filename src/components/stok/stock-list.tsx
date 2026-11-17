@@ -49,6 +49,7 @@ export default function StockList() {
       <div className="flex gap-2">
         <Button variant="outline" size="xs" onClick={() => setAdjust(r)}>Sesuaikan</Button>
         <Button variant="ghost" size="xs" onClick={() => setMinFor(r)}>Atur Minimum</Button>
+        <Link href={`/stok/riwayat?item=${r.id}`}><Button variant="ghost" size="xs">Riwayat</Button></Link>
       </div>) },
   ];
 
