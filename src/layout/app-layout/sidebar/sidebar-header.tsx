@@ -3,13 +3,17 @@
 import { SidebarHeader } from "@/components/ui/sidebar";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/utils";
+import Image from "next/image";
 
 interface AppSidebarHeaderProps {
   showContent: boolean;
 }
 
-export default function AppSidebarHeader({ showContent }: AppSidebarHeaderProps) {
-  const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "Fried Chicken Management";
+export default function AppSidebarHeader({
+  showContent,
+}: AppSidebarHeaderProps) {
+  const appName =
+    process.env.NEXT_PUBLIC_APP_NAME ?? "Fried Chicken Management";
   return (
     <SidebarHeader className="px-5 py-8">
       <Link
@@ -19,12 +23,20 @@ export default function AppSidebarHeader({ showContent }: AppSidebarHeaderProps)
           !showContent ? "justify-center" : "justify-start",
         )}
       >
-        <span
+        {/* <span
           aria-hidden
           className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#E71201] text-lg font-bold text-white"
         >
           FC
-        </span>
+        </span> */}
+        <Image
+          style={{ objectFit: "cover", width: "40px", height: "40px" }}
+          className="rounded-lg"
+          width={40}
+          height={40}
+          src="/images/logo/logo.png"
+          alt="Logo"
+        />
         {showContent && (
           <span className="text-base leading-tight font-semibold text-gray-800 dark:text-white/90">
             {appName}

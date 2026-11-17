@@ -19,16 +19,19 @@ export default function AuthLayout({
               <GridShape />
 
               <div className="flex max-w-xs flex-col items-center">
-                <Link href="/" className="mb-4 block">
+                <Link
+                  href="/"
+                  className="mb-4 block size-50 overflow-hidden rounded-lg"
+                >
                   <Image
-                    width={231}
-                    height={48}
-                    src="/images/logo/auth-logo.svg"
+                    width={1191}
+                    height={1418}
+                    src="/images/logo/auth-logo.png"
                     alt="Logo"
                   />
                 </Link>
                 <p className="text-center text-gray-400 dark:text-white/60">
-                  Free and Open-Source Tailwind CSS Admin Dashboard Template
+                  Akbar Fried Chicken Management
                 </p>
               </div>
             </div>
