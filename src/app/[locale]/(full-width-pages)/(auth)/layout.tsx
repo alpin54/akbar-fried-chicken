@@ -21,14 +21,15 @@ export default function AuthLayout({
               <div className="flex max-w-xs flex-col items-center">
                 <Link href="/" className="mb-4 block">
                   <Image
+                    className="rounded-lg"
                     width={231}
                     height={48}
-                    src="/images/logo/auth-logo.svg"
+                    src="/images/logo/auth-logo.png"
                     alt="Logo"
                   />
                 </Link>
                 <p className="text-center text-gray-400 dark:text-white/60">
-                  Free and Open-Source Tailwind CSS Admin Dashboard Template
+                  Akbar Fried Chicken Management System
                 </p>
               </div>
             </div>

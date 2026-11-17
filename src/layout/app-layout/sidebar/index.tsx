@@ -1,10 +1,6 @@
 "use client";
 
-import {
-  Sidebar,
-  SidebarContent,
-  useSidebar,
-} from "@/components/ui/sidebar";
+import { Sidebar, SidebarContent, useSidebar } from "@/components/ui/sidebar";
 import { usePathname } from "@/i18n/navigation";
 import { useState } from "react";
 import { navSections } from "./data";
@@ -18,12 +14,7 @@ const findMatchingSubmenu = (path: string) => {
   for (const section of menuSections) {
     for (let index = 0; index < section.items.length; index++) {
       const nav = section.items[index];
-      if (
-        nav.subItems?.some(
-          (subItem) =>
-            subItem.path === path,
-        )
-      ) {
+      if (nav.subItems?.some((subItem) => subItem.path === path)) {
         return { type: section.type, index };
       }
     }
@@ -87,7 +78,6 @@ export default function AppSidebar() {
           </div>
         </nav>
       </SidebarContent>
-
     </Sidebar>
   );
 }
